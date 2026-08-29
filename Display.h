@@ -185,6 +185,15 @@ int p_as_y = 0;
 
 #if defined(DISPLAY_64X32)
   #define DISP_AREA_BYTES 256
+  // Only one block fits on the 64x32 panel at a time, so the content that the
+  // larger panels show side by side is rotated through these pages instead.
+  #define CPAGE_STATUS 0
+  #define CPAGE_ADDR   1
+  #define CPAGE_STAT   2
+  #define CPAGE_COUNT  3
+  uint8_t compact_page = CPAGE_STATUS;
+  uint32_t last_compact_flip = 0;
+  int compact_page_interval = 4000;
   GFXcanvas1 stat_area(64, 32);
   GFXcanvas1 disp_area(64, 32);
 #else
@@ -812,6 +821,19 @@ void draw_waterfall(int px, int py) {
 
 bool stat_area_intialised = false;
 void draw_stat_area() {
+  #if defined(DISPLAY_64X32)
+    // A row of state icons over a row of battery, quality and signal meters
+    if (device_init_done) {
+      stat_area.fillRect(0, 0, stat_area.width(), stat_area.height(), SSD1306_BLACK);
+      draw_cable_icon(0, 0);
+      draw_bt_icon(16, 0);
+      draw_lora_icon(32, 0);
+      draw_mw_icon(48, 0);
+      draw_battery_bars(3, 22);
+      draw_quality_bars(25, 20);
+      draw_signal_bars(45, 20);
+    }
+  #else
   if (device_init_done) {
     if (!stat_area_intialised) {
       stat_area.drawBitmap(0, 0, bm_frame, 64, 64, SSD1306_WHITE, SSD1306_BLACK);
@@ -829,11 +851,16 @@ void draw_stat_area() {
       draw_waterfall(27, 4);
     }
   }
+  #endif
 }
 
 void update_stat_area() {
   #if defined(DISPLAY_64X32)
-    // The status area does not fit alongside the display area on this panel
+    // Shown as a page of its own rather than alongside the display area
+    if (compact_page == CPAGE_STAT) {
+      draw_stat_area();
+      drawBitmap(p_as_x, p_as_y, stat_area.getBuffer(), stat_area.width(), stat_area.height(), SSD1306_WHITE, SSD1306_BLACK);
+    }
   #else
   if (eeprom_ok && !firmware_update_mode && !console_active) {
 
@@ -882,8 +909,8 @@ void draw_disp_area() {
   } else {
     if (!disp_ext_fb or bt_ssp_pin != 0) {
       #if defined(DISPLAY_64X32)
-      // There is no room for the logo, diagnostics or address readout above
-      // the status block on this panel, so only the block itself is drawn.
+      // No room for the logo or diagnostics next to the status block on this
+      // panel, so the address gets a rotation page of its own instead.
       disp_area.fillRect(0, 0, disp_area.width(), disp_area.height(), SSD1306_BLACK);
       #else
       if (radio_online && display_diagnostics) {
@@ -981,6 +1008,25 @@ void draw_disp_area() {
       }
       #endif
 
+      #if defined(DISPLAY_64X32)
+      if (compact_page == CPAGE_STAT) {
+        // Drawn from the status area instead of here
+      } else if (compact_page == CPAGE_ADDR) {
+        // bt_dh is a signed char array, so cast before formatting: a byte of
+        // 0x80 or above would otherwise sign-extend into eight hex digits
+        char addr_str[5];
+        snprintf(addr_str, sizeof(addr_str), "%02X%02X", (uint8_t)bt_dh[14], (uint8_t)bt_dh[15]);
+        disp_area.setFont(SMALL_FONT); disp_area.setTextWrap(false);
+        disp_area.setTextColor(SSD1306_WHITE);
+        disp_area.setTextSize(1);
+        disp_area.setCursor(2, 6); disp_area.print("BT ADDR");
+        disp_area.setTextSize(2);
+        int16_t bx, by; uint16_t bw, bh;
+        disp_area.getTextBounds(addr_str, 0, 0, &bx, &by, &bw, &bh);
+        disp_area.setCursor((disp_area.width()-(int16_t)bw)/2 - bx, 27);
+        disp_area.print(addr_str);
+      } else
+      #endif
       if (!hw_ready || radio_error || !device_firmware_ok()) {
         if (!device_firmware_ok()) {
           disp_area.drawBitmap(0, DISP_STATUS_Y, bm_fw_corrupt, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
@@ -1049,11 +1095,38 @@ void draw_disp_area() {
   }
 }
 
+#if defined(DISPLAY_64X32)
+// Advances the page rotation, unless the current state must stay on screen
+void compact_update_page() {
+  bool locked = false;
+  if (!device_init_done || firmware_update_mode) { locked = true; }
+  if (!hw_ready || radio_error || !device_firmware_ok()) { locked = true; }
+  if (bt_state == BT_STATE_PAIRING and bt_ssp_pin != 0) { locked = true; }
+  if (disp_ext_fb) { locked = true; }
+
+  if (locked) {
+    compact_page = CPAGE_STATUS;
+    last_compact_flip = millis();
+    return;
+  }
+
+  if (millis()-last_compact_flip >= compact_page_interval) {
+    compact_page = (compact_page+1)%CPAGE_COUNT;
+    last_compact_flip = millis();
+  }
+}
+#endif
+
 void update_disp_area() {
   draw_disp_area();
 
-  drawBitmap(p_ad_x, p_ad_y, disp_area.getBuffer(), disp_area.width(), disp_area.height(), SSD1306_WHITE, SSD1306_BLACK);
-  #if !defined(DISPLAY_64X32)
+  #if defined(DISPLAY_64X32)
+    // On the status page the panel is filled from the status area instead
+    if (compact_page != CPAGE_STAT) {
+      drawBitmap(p_ad_x, p_ad_y, disp_area.getBuffer(), disp_area.width(), disp_area.height(), SSD1306_WHITE, SSD1306_BLACK);
+    }
+  #else
+    drawBitmap(p_ad_x, p_ad_y, disp_area.getBuffer(), disp_area.width(), disp_area.height(), SSD1306_WHITE, SSD1306_BLACK);
     if (disp_mode == DISP_MODE_LANDSCAPE) {
       if (device_init_done && !firmware_update_mode && !disp_ext_fb) {
         drawLine(0, 0, 0, 63, SSD1306_WHITE);
@@ -1170,6 +1243,9 @@ void update_display(bool blank = false) {
           display.fillScreen(SSD1306_WHITE);
         #endif
 
+        #if defined(DISPLAY_64X32)
+          compact_update_page();
+        #endif
         update_stat_area();
         update_disp_area();
       }
