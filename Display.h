@@ -40,8 +40,18 @@
 #endif
 
 #include "Fonts/Org_01.h"
-#define DISP_W 128
-#define DISP_H 64
+
+#if BOARD_MODEL == BOARD_HELTEC32_V3_WS
+  // The Heltec Wireless Stick v3 carries a 0.49" 64x32 panel. Adafruit_SSD1306
+  // drives the 32 column offset of the visible window on 64 pixel wide panels
+  // by itself, so only the geometry needs to be declared here.
+  #define DISPLAY_64X32 true
+  #define DISP_W 64
+  #define DISP_H 32
+#else
+  #define DISP_W 128
+  #define DISP_H 64
+#endif
 
 #if BOARD_MODEL == BOARD_RNODE_NG_20 || BOARD_MODEL == BOARD_LORA32_V2_0
   #define DISP_RST -1
@@ -56,6 +66,11 @@
   #define SCL_OLED 15
   #define SDA_OLED 4
 #elif BOARD_MODEL == BOARD_HELTEC32_V3
+  #define DISP_RST 21
+  #define DISP_ADDR 0x3C
+  #define SCL_OLED 18
+  #define SDA_OLED 17
+#elif BOARD_MODEL == BOARD_HELTEC32_V3_WS
   #define DISP_RST 21
   #define DISP_ADDR 0x3C
   #define SCL_OLED 18
@@ -132,6 +147,14 @@ float epd_update_fps  = 0.5;
 #define DISP_MODE_LANDSCAPE 0x01
 #define DISP_MODE_PORTRAIT  0x02
 #define DISP_PIN_SIZE   6
+// Vertical offset of the status block (boot, pairing, online, and so on)
+// within the display area. The block itself is 64x27, which is everything
+// that fits on the 64x32 panel.
+#if defined(DISPLAY_64X32)
+  #define DISP_STATUS_Y 2
+#else
+  #define DISP_STATUS_Y 37
+#endif
 #define DISPLAY_BLANKING_TIMEOUT 15*1000
 uint8_t disp_mode = DISP_MODE_UNKNOWN;
 uint8_t disp_ext_fb = false;
@@ -160,8 +183,15 @@ int p_ad_y = 0;
 int p_as_x = 0;
 int p_as_y = 0;
 
-GFXcanvas1 stat_area(64, 64);
-GFXcanvas1 disp_area(64, 64);
+#if defined(DISPLAY_64X32)
+  #define DISP_AREA_BYTES 256
+  GFXcanvas1 stat_area(64, 32);
+  GFXcanvas1 disp_area(64, 32);
+#else
+  #define DISP_AREA_BYTES 512
+  GFXcanvas1 stat_area(64, 64);
+  GFXcanvas1 disp_area(64, 64);
+#endif
 
 static const uint8_t one_counts[256] = {
   0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  1,  2,  1,  1,  1,  1,
@@ -209,6 +239,13 @@ void update_area_positions() {
       p_as_x = 64;
       p_as_y = 0;
     }
+  #elif defined(DISPLAY_64X32)
+    // The 64x32 panel only has room for the display area, so it covers the
+    // entire panel and the status area is not drawn at all.
+    p_ad_x = 0;
+    p_ad_y = 0;
+    p_as_x = 0;
+    p_as_y = 0;
   #else
     if (disp_mode == DISP_MODE_PORTRAIT) {
       p_ad_x = 0 * DISPLAY_SCALE;
@@ -278,7 +315,7 @@ bool display_init() {
       Wire.begin(SDA_OLED, SCL_OLED);
     #elif BOARD_MODEL == BOARD_HELTEC32_V2
       Wire.begin(SDA_OLED, SCL_OLED);
-    #elif BOARD_MODEL == BOARD_HELTEC32_V3
+    #elif BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V3_WS
       // enable vext / pin 36
       pinMode(Vext, OUTPUT);
       digitalWrite(Vext, LOW);
@@ -331,6 +368,11 @@ bool display_init() {
       uint8_t display_rotation = eeprom_read(eeprom_addr(ADDR_CONF_DROT));
     #endif
     if (display_rotation < 0 or display_rotation > 3) display_rotation = 0xFF;
+    #if defined(DISPLAY_64X32)
+      // Only the landscape orientations are usable on the 64x32 panel, so a
+      // portrait rotation stored in EEPROM falls back to the board default.
+      if (display_rotation == 1 or display_rotation == 3) display_rotation = 0xFF;
+    #endif
 
     #if DISP_CUSTOM_ADDR == true
       #if HAS_EEPROM
@@ -419,6 +461,9 @@ bool display_init() {
         #elif BOARD_MODEL == BOARD_HELTEC32_V3
           disp_mode = DISP_MODE_PORTRAIT;
           display.setRotation(1);
+        #elif BOARD_MODEL == BOARD_HELTEC32_V3_WS
+          disp_mode = DISP_MODE_LANDSCAPE;
+          display.setRotation(0);
         #elif BOARD_MODEL == BOARD_HELTEC32_V4
           disp_mode = DISP_MODE_PORTRAIT;
           display.setRotation(1);
@@ -787,6 +832,9 @@ void draw_stat_area() {
 }
 
 void update_stat_area() {
+  #if defined(DISPLAY_64X32)
+    // The status area does not fit alongside the display area on this panel
+  #else
   if (eeprom_ok && !firmware_update_mode && !console_active) {
 
     draw_stat_area();
@@ -807,6 +855,7 @@ void update_stat_area() {
       }
     }
   }
+  #endif
 }
 
 #define START_PAGE 0
@@ -819,15 +868,24 @@ extern char bt_dh[16];
 #endif
 void draw_disp_area() {
   if (!device_init_done || firmware_update_mode) {
-    uint8_t p_by = 37;
-    if (disp_mode == DISP_MODE_LANDSCAPE || firmware_update_mode) {
-      p_by = 18;
+    uint8_t p_by = DISP_STATUS_Y;
+    #if defined(DISPLAY_64X32)
       disp_area.fillRect(0, 0, disp_area.width(), disp_area.height(), SSD1306_BLACK);
-    }
+    #else
+      if (disp_mode == DISP_MODE_LANDSCAPE || firmware_update_mode) {
+        p_by = 18;
+        disp_area.fillRect(0, 0, disp_area.width(), disp_area.height(), SSD1306_BLACK);
+      }
+    #endif
     if (!device_init_done) disp_area.drawBitmap(0, p_by, bm_boot, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
     if (firmware_update_mode) disp_area.drawBitmap(0, p_by, bm_fw_update, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
   } else {
     if (!disp_ext_fb or bt_ssp_pin != 0) {
+      #if defined(DISPLAY_64X32)
+      // There is no room for the logo, diagnostics or address readout above
+      // the status block on this panel, so only the block itself is drawn.
+      disp_area.fillRect(0, 0, disp_area.width(), disp_area.height(), SSD1306_BLACK);
+      #else
       if (radio_online && display_diagnostics) {
         disp_area.fillRect(0,8,disp_area.width(),37, SSD1306_BLACK); disp_area.fillRect(0,37,disp_area.width(),27, SSD1306_WHITE);
         disp_area.setFont(SMALL_FONT); disp_area.setTextWrap(false); disp_area.setTextColor(SSD1306_WHITE); disp_area.setTextSize(1);
@@ -921,26 +979,27 @@ void draw_disp_area() {
           disp_area.setCursor(17+ofsc, 32); disp_area.printf("%02X%02X", bt_dh[14], bt_dh[15]);
         }
       }
+      #endif
 
       if (!hw_ready || radio_error || !device_firmware_ok()) {
         if (!device_firmware_ok()) {
-          disp_area.drawBitmap(0, 37, bm_fw_corrupt, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+          disp_area.drawBitmap(0, DISP_STATUS_Y, bm_fw_corrupt, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
         } else {
           if (!modem_installed) {
-            disp_area.drawBitmap(0, 37, bm_no_radio, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+            disp_area.drawBitmap(0, DISP_STATUS_Y, bm_no_radio, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
           } else {
-            disp_area.drawBitmap(0, 37, bm_conf_missing, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+            disp_area.drawBitmap(0, DISP_STATUS_Y, bm_conf_missing, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
           }
         }
       } else if (bt_state == BT_STATE_PAIRING and bt_ssp_pin != 0) {
         char *pin_str = (char*)malloc(DISP_PIN_SIZE+1);
         sprintf(pin_str, "%06d", bt_ssp_pin);
 
-        disp_area.drawBitmap(0, 37, bm_pairing, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+        disp_area.drawBitmap(0, DISP_STATUS_Y, bm_pairing, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
         for (int i = 0; i < DISP_PIN_SIZE; i++) {
           uint8_t numeric = pin_str[i]-48;
           uint8_t offset = numeric*5;
-          disp_area.drawBitmap(7+9*i, 37+16, bm_n_uh+offset, 8, 5, SSD1306_WHITE, SSD1306_BLACK);
+          disp_area.drawBitmap(7+9*i, DISP_STATUS_Y+16, bm_n_uh+offset, 8, 5, SSD1306_WHITE, SSD1306_BLACK);
         }
         free(pin_str);
       } else {
@@ -952,23 +1011,23 @@ void draw_disp_area() {
 
         if (radio_online) {
           if (!display_diagnostics) {
-            disp_area.drawBitmap(0, 37, bm_online, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+            disp_area.drawBitmap(0, DISP_STATUS_Y, bm_online, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
           }
         } else {
           if (disp_page == 0) {
             if (true || device_signatures_ok()) {
-              disp_area.drawBitmap(0, 37, bm_checks, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+              disp_area.drawBitmap(0, DISP_STATUS_Y, bm_checks, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
             } else {
-              disp_area.drawBitmap(0, 37, bm_nfr, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+              disp_area.drawBitmap(0, DISP_STATUS_Y, bm_nfr, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
             }
           } else if (disp_page == 1) {
             if (!console_active) {
-              disp_area.drawBitmap(0, 37, bm_hwok, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+              disp_area.drawBitmap(0, DISP_STATUS_Y, bm_hwok, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
             } else {
-              disp_area.drawBitmap(0, 37, bm_console_active, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+              disp_area.drawBitmap(0, DISP_STATUS_Y, bm_console_active, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
             }
           } else if (disp_page == 2) {
-            disp_area.drawBitmap(0, 37, bm_version, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
+            disp_area.drawBitmap(0, DISP_STATUS_Y, bm_version, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
             char *v_str = (char*)malloc(3+1);
             sprintf(v_str, "%01d%02d", MAJ_VERS, MIN_VERS);
             for (int i = 0; i < 3; i++) {
@@ -976,11 +1035,11 @@ void draw_disp_area() {
               uint8_t dxp = 20;
               if (i == 1) dxp += 9*1+4;
               if (i == 2) dxp += 9*2+4;
-              disp_area.drawBitmap(dxp, 37+16, bm_n_uh+bm_offset, 8, 5, SSD1306_WHITE, SSD1306_BLACK);
+              disp_area.drawBitmap(dxp, DISP_STATUS_Y+16, bm_n_uh+bm_offset, 8, 5, SSD1306_WHITE, SSD1306_BLACK);
             }
             free(v_str);
-            disp_area.drawLine(27, 37+19, 28, 37+19, SSD1306_BLACK);
-            disp_area.drawLine(27, 37+20, 28, 37+20, SSD1306_BLACK);
+            disp_area.drawLine(27, DISP_STATUS_Y+19, 28, DISP_STATUS_Y+19, SSD1306_BLACK);
+            disp_area.drawLine(27, DISP_STATUS_Y+20, 28, DISP_STATUS_Y+20, SSD1306_BLACK);
           }
         }
       }
@@ -994,11 +1053,13 @@ void update_disp_area() {
   draw_disp_area();
 
   drawBitmap(p_ad_x, p_ad_y, disp_area.getBuffer(), disp_area.width(), disp_area.height(), SSD1306_WHITE, SSD1306_BLACK);
-  if (disp_mode == DISP_MODE_LANDSCAPE) {
-    if (device_init_done && !firmware_update_mode && !disp_ext_fb) {
-      drawLine(0, 0, 0, 63, SSD1306_WHITE);
+  #if !defined(DISPLAY_64X32)
+    if (disp_mode == DISP_MODE_LANDSCAPE) {
+      if (device_init_done && !firmware_update_mode && !disp_ext_fb) {
+        drawLine(0, 0, 0, 63, SSD1306_WHITE);
+      }
     }
-  }
+  #endif
 }
 
 void display_recondition() {
@@ -1010,11 +1071,13 @@ void display_recondition() {
     }
 
     drawBitmap(p_ad_x, p_ad_y, disp_area.getBuffer(), disp_area.width(), disp_area.height(), SSD1306_WHITE, SSD1306_BLACK);
+    #if !defined(DISPLAY_64X32)
     if (disp_mode == DISP_MODE_PORTRAIT) {
       drawBitmap(p_as_x, p_as_y, stat_area.getBuffer(), stat_area.width(), stat_area.height(), SSD1306_WHITE, SSD1306_BLACK);
     } else if (disp_mode == DISP_MODE_LANDSCAPE) {
       drawBitmap(p_as_x, p_as_y, stat_area.getBuffer(), stat_area.width(), stat_area.height(), SSD1306_WHITE, SSD1306_BLACK);
     }
+    #endif
   #endif
 }
 
