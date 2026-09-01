@@ -1,3 +1,19 @@
+## Fixes from this fork
+Reticulum cuts off three-quarters of the screen on the Heltec Wireless Stick board (screen resolution 64x32 instead of 128x64).
+### Before fix:
+<img width="300" height="auto" alt="heltec_truncated" src="https://github.com/user-attachments/assets/a5033f9b-8800-43e5-bbca-4b5e74e0917d" />
+
+The Bluetooth PIN code is unreadable.
+### After:
+The image is adapted for a small display and is displayed page by page.
+<img width="300" height="auto" alt="heltec_fixed_paged" src="https://github.com/user-attachments/assets/c3f92f5e-0d4e-439d-a693-22a415810209" />
+
+
+<img width="300" height="auto" alt="heltec_pin" src="https://github.com/user-attachments/assets/0c7cd1fc-5443-4e95-9cb1-7470a5c6f3cf" />
+
+-------------------------------
+
+
 *This repository is [a public mirror](./MIRROR.md). All development is happening elsewhere.*
 
 ***Important!** This repository is currently functioning as a stable reference for the default RNode Firmware, and only receives bugfix and security updates. Further development, new features and expanded board support is now happening at the [RNode Firmware Community Edition](https://github.com/liberatedsystems/RNode_Firmware_CE) repository, and is maintained by [Liberated Embedded Systems](https://github.com/liberatedsystems). Thanks for all contributions so far!*
