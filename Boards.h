@@ -95,6 +95,12 @@
   #define MODEL_C5            0xC5 // Heltec Lora32 v3, 433 MHz
   #define MODEL_CA            0xCA // Heltec Lora32 v3, 868 MHz
 
+  // The Heltec Wireless Stick v3 is electrically identical to the Heltec
+  // Lora32 v3, but carries a 0.49" 64x32 OLED instead of the 128x64 one.
+  // It is provisioned as a Lora32 v3, so the product and model codes above
+  // are reused, and only the display profile differs.
+  #define BOARD_HELTEC32_V3_WS 0x43
+
   #define PRODUCT_H32_V4      0xC3
   #define BOARD_HELTEC32_V4   0x3F
   #define MODEL_C8            0xC8 // Heltec Lora32 v3, 850-950 MHz, 28dBm
@@ -348,7 +354,7 @@
         const int pin_led_tx = 25;
       #endif
 
-    #elif BOARD_MODEL == BOARD_HELTEC32_V3
+    #elif BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V3_WS
       #define IS_ESP32S3 true
       #define HAS_DISPLAY true
       #define HAS_WIFI true

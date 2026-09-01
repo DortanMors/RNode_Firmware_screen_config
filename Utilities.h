@@ -77,7 +77,7 @@ uint8_t eeprom_read(uint32_t mapped_addr);
 #endif
 #if MCU_VARIANT == MCU_ESP32
   //https://github.com/espressif/esp-idf/issues/8855
-  #if BOARD_MODEL == BOARD_HELTEC32_V3
+  #if BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V3_WS
     #include "hal/wdt_hal.h"
 	#elif BOARD_MODEL == BOARD_T3S3
 		#include "hal/wdt_hal.h"
@@ -298,7 +298,7 @@ uint8_t boot_vector = 0x00;
 			void led_id_on()  { }
 			void led_id_off() { }
 		#endif
-	#elif BOARD_MODEL == BOARD_HELTEC32_V3
+	#elif BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V3_WS
 			void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
 			void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
 			void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
@@ -1146,8 +1146,8 @@ void kiss_indicate_disp() {
 	#if HAS_DISPLAY
 		uint8_t *da = disp_area.getBuffer();
 		uint8_t *sa = stat_area.getBuffer();
-		for (int i = 0; i < 512; i++) { escaped_serial_write(da[i]); }
-		for (int i = 0; i < 512; i++) { escaped_serial_write(sa[i]); }
+		for (int i = 0; i < DISP_AREA_BYTES; i++) { escaped_serial_write(da[i]); }
+		for (int i = 0; i < DISP_AREA_BYTES; i++) { escaped_serial_write(sa[i]); }
 	#else
 		serial_write(0xFF);
 	#endif
@@ -1663,7 +1663,7 @@ bool eeprom_model_valid() {
 	if (model == MODEL_B4 || model == MODEL_B9) {
 	#elif BOARD_MODEL == BOARD_HELTEC32_V2
 	if (model == MODEL_C4 || model == MODEL_C9) {
-	#elif BOARD_MODEL == BOARD_HELTEC32_V3
+	#elif BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V3_WS
 	if (model == MODEL_C5 || model == MODEL_CA) {
 	#elif BOARD_MODEL == BOARD_HELTEC32_V4
 	if (model == MODEL_C8) {
