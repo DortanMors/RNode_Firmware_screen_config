@@ -7,10 +7,10 @@ The Bluetooth PIN code is unreadable.
 ### After:
 The image is adapted for a small display and is displayed page by page.
 
-<img width="300" height="auto" alt="heltec_fixed_paged" src="https://github.com/user-attachments/assets/c3f92f5e-0d4e-439d-a693-22a415810209" />
+<img width="auto" height="250" alt="heltec_fixed_paged" src="https://github.com/user-attachments/assets/c3f92f5e-0d4e-439d-a693-22a415810209" />
 
 
-<img width="300" height="auto" alt="heltec_pin" src="https://github.com/user-attachments/assets/0c7cd1fc-5443-4e95-9cb1-7470a5c6f3cf" />
+<img width="auto" height="250" alt="heltec_pin" src="https://github.com/user-attachments/assets/0c7cd1fc-5443-4e95-9cb1-7470a5c6f3cf" />
 
 -------------------------------
 
